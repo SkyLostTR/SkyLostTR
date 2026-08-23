@@ -1,0 +1,183 @@
+extends Node3D
+
+const LEADERBOARD_URL := "__LEADERBOARD_URL__"
+const SAVE_PATH := "user://deepcore.json"
+const CYAN := Color(0.35,0.9,1.0)
+const PURPLE := Color(0.6,0.35,1.0)
+const GOLD := Color(1.0,0.7,0.25)
+const TEXT := Color(0.95,0.97,1.0)
+const MUTED := Color(0.52,0.6,0.72)
+const PANEL := Color(0.035,0.052,0.09,0.95)
+
+var rng := RandomNumberGenerator.new()
+var coins := 0
+var score := 0
+var depth := 1
+var pick_level := 1
+var drill_level := 0
+var cargo_level := 0
+var hp := 25.0
+var hp_max := 25.0
+var player_id := ""
+var player_name := ""
+var last_saved := 0
+var current_ore := {}
+
+var camera: Camera3D
+var core: Node3D
+var core_light: OmniLight3D
+var drill: Node3D
+var particles: GPUParticles3D
+var mine_btn: Button
+var coins_lbl: Label
+var depth_lbl: Label
+var power_lbl: Label
+var ore_lbl: Label
+var reward_lbl: Label
+var hp_bar: ProgressBar
+var status_lbl: Label
+var shop: PanelContainer
+var ranks: PanelContainer
+var rank_list: VBoxContainer
+var name_edit: LineEdit
+var toast: Label
+var http: HTTPRequest
+var http_mode := ""
+var http_busy := false
+var pending := {}
+var auto_timer: Timer
+var t := 0.0
+var camera_home := Vector3.ZERO
+
+var ores := [
+ {"name":"Iron Vein","value":18,"weight":48.0,"min":1,"color":Color(0.65,0.72,0.8)},
+ {"name":"Copper Bloom","value":34,"weight":28.0,"min":2,"color":Color(1.0,0.48,0.23)},
+ {"name":"Azurite","value":75,"weight":14.0,"min":5,"color":Color(0.18,0.66,1.0)},
+ {"name":"Amethyst Core","value":150,"weight":7.0,"min":10,"color":Color(0.68,0.34,1.0)},
+ {"name":"Solar Gold","value":340,"weight":2.4,"min":18,"color":Color(1.0,0.74,0.2)},
+ {"name":"Void Crystal","value":900,"weight":0.6,"min":32,"color":Color(0.35,1.0,0.86)}
+]
+
+func _ready() -> void:
+ rng.randomize()
+ _load()
+ _world()
+ _ui()
+ _network()
+ _new_ore()
+ _offline_reward()
+ _auto()
+ _refresh()
+ _intro()
+
+func _process(delta: float) -> void:
+ t += delta
+ if core:
+  core.rotation.y += delta * 0.1
+  core.scale = Vector3.ONE * (1.0 + sin(t * 2.4) * 0.035)
+ if core_light:
+  core_light.light_energy = 2.0 + sin(t * 3.2) * 0.35
+
+func _notification(what: int) -> void:
+ if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_CLOSE_REQUEST:
+  _save()
+
+func mat(c: Color, metal := 0.0, rough := 0.8, emission := false) -> StandardMaterial3D:
+ var m := StandardMaterial3D.new()
+ m.albedo_color = c
+ m.metallic = metal
+ m.roughness = rough
+ if emission:
+  m.emission_enabled = true
+  m.emission = c
+  m.emission_energy_multiplier = 3.2
+ return m
+
+func rock(size: Vector3, position: Vector3, material: Material) -> void:
+ var mesh := SphereMesh.new()
+ mesh.radial_segments = 10
+ mesh.rings = 6
+ var n := MeshInstance3D.new()
+ n.mesh = mesh
+ n.material_override = material
+ n.scale = size
+ n.position = position
+ n.rotation = Vector3(rng.randf(),rng.randf(),rng.randf())
+ add_child(n)
+
+func crystal(parent: Node, position: Vector3, color: Color, size := 1.0) -> void:
+ var mesh := CylinderMesh.new()
+ mesh.top_radius = 0.0
+ mesh.bottom_radius = 0.27
+ mesh.height = 1.35
+ mesh.radial_segments = 5
+ var n := MeshInstance3D.new()
+ n.mesh = mesh
+ n.material_override = mat(color,0.12,0.28,true)
+ n.position = position
+ n.scale = Vector3.ONE * size
+ n.rotation = Vector3(rng.randf_range(-0.5,0.5),rng.randf_range(-2.0,2.0),rng.randf_range(-0.45,0.45))
+ parent.add_child(n)
+
+func _world() -> void:
+ var we := WorldEnvironment.new()
+ var env := Environment.new()
+ env.background_mode = Environment.BG_COLOR
+ env.background_color = Color(0.01,0.018,0.035)
+ env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+ env.ambient_light_color = Color(0.22,0.3,0.5)
+ env.ambient_light_energy = 0.58
+ env.tonemap_mode = Environment.TONE_MAPPER_ACES
+ env.fog_enabled = true
+ env.fog_light_color = Color(0.08,0.13,0.22)
+ env.fog_density = 0.018
+ we.environment = env
+ add_child(we)
+
+ camera = Camera3D.new()
+ camera.position = Vector3(0,2.35,8.4)
+ camera.fov = 54
+ add_child(camera)
+ camera.look_at(Vector3(0,0.2,-1.6),Vector3.UP)
+ camera_home = camera.position
+
+ var sun := DirectionalLight3D.new()
+ sun.rotation_degrees = Vector3(-55,-25,0)
+ sun.light_color = Color(0.65,0.78,1.0)
+ sun.light_energy = 1.25
+ sun.shadow_enabled = true
+ add_child(sun)
+ var rim := OmniLight3D.new()
+ rim.position = Vector3(-3,2,0)
+ rim.light_color = PURPLE
+ rim.light_energy = 2.0
+ rim.omni_range = 8
+ rim.shadow_enabled = true
+ add_child(rim)
+
+ var floor := BoxMesh.new(); floor.size = Vector3(13,0.5,22)
+ var fm := MeshInstance3D.new(); fm.mesh=floor; fm.material_override=mat(Color(0.07,0.08,0.1)); fm.position=Vector3(0,-1.75,-3.5); add_child(fm)
+ var rm := mat(Color(0.075,0.085,0.11),0.02,0.95)
+ for z in range(-5,5):
+  for side in [-1,1]:
+   rock(Vector3(rng.randf_range(1.7,2.5),rng.randf_range(1.7,3.0),rng.randf_range(1.5,2.7)),Vector3(float(side)*rng.randf_range(4.1,5.1),rng.randf_range(-0.2,2.2),float(z)*2.0-1.0),rm)
+  if z % 2 == 0:
+   rock(Vector3(rng.randf_range(2.5,3.7),rng.randf_range(1.0,1.7),rng.randf_range(2.0,3.1)),Vector3(rng.randf_range(-1.5,1.5),5.5,float(z)*2.0-1.0),rm)
+ for i in range(20):
+  var root := Node3D.new(); root.position=Vector3((-1 if i%2==0 else 1)*rng.randf_range(3.0,4.3),rng.randf_range(-1.1,2.8),rng.randf_range(-8.5,2)); add_child(root)
+  for j in range(rng.randi_range(2,4)):
+   crystal(root,Vector3(rng.randf_range(-0.3,0.3),0,rng.randf_range(-0.25,0.25)),CYAN if i%3 else PURPLE,rng.randf_range(0.3,0.65))
+
+ core = Node3D.new(); core.position=Vector3(0,-0.15,-1.5); add_child(core)
+ var core_mesh := SphereMesh.new(); core_mesh.radial_segments=14; core_mesh.rings=8; core_mesh.radius=1.3; core_mesh.height=2.35
+ var core_body := MeshInstance3D.new(); core_body.mesh=core_mesh; core_body.material_override=mat(Color(0.1,0.12,0.16),0.08,0.82); core_body.scale=Vector3(1.08,0.88,0.92); core.add_child(core_body)
+ for i in range(9):
+  var a := TAU*float(i)/9.0
+  crystal(core,Vector3(cos(a)*rng.randf_range(0.65,0.95),rng.randf_range(-0.55,0.6),sin(a)*rng.randf_range(0.55,0.85)),CYAN,rng.randf_range(0.55,0.95))
+ core_light=OmniLight3D.new(); core_light.position=Vector3(0,0.2,0.3); core_light.light_color=CYAN; core_light.light_energy=2.2; core_light.omni_range=6.5; core_light.shadow_enabled=true; core.add_child(core_light)
+ _drill_model()
+ _particles()
+
+func _drill_model() -> void:
+ drill=Node3D.new(); drill.position=Vector3(2.55,-0.65,1.25); drill.rotation_degrees=Vector3(-18,-15,-20); add_child(drill)
+ var body_mesh:=BoxMesh.new(); body_mesh.size=Vector3(0.75,0.62,1.45)
