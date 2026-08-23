@@ -7,6 +7,12 @@ on:
     paths:
       - 'deepcore-miner/**'
       - '.github/workflows/deepcore-miner-build.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'deepcore-miner/**'
+      - '.github/workflows/deepcore-miner-build.yml'
   workflow_dispatch:
 
 permissions:
@@ -49,126 +55,75 @@ jobs:
           python3 <<'PY'
           import math, struct, wave, zlib
           from pathlib import Path
-
           assets = Path('assets')
           sfx = assets / 'sfx'
           sfx.mkdir(parents=True, exist_ok=True)
-
-          # Portrait boot splash: original claw + gold composition.
           w, h = 540, 960
           rows = []
           for y in range(h):
               row = bytearray([0])
               for x in range(w):
                   vertical = y / h
-                  r = int(24 + 34*(1-vertical))
-                  g = int(10 + 14*(1-vertical))
-                  b = int(6 + 8*(1-vertical))
-                  # Layered soil.
+                  r = int(24 + 34*(1-vertical)); g = int(10 + 14*(1-vertical)); b = int(6 + 8*(1-vertical))
                   if y > 260:
                       band = (y-260) / 700
-                      r = int(92 - 50*band)
-                      g = int(38 - 20*band)
-                      b = int(18 - 8*band)
-                  # Platform.
-                  if 180 <= y <= 205 and 80 <= x <= 460:
-                      r, g, b = 35, 39, 44
-                  if 175 <= y <= 183 and 80 <= x <= 460:
-                      r, g, b = 244, 174, 27
-                  # Winch drum.
-                  if (x-270)*(x-270) + (y-195)*(y-195) <= 33*33:
-                      r, g, b = 98, 105, 111
-                  # Rope.
+                      r = int(92 - 50*band); g = int(38 - 20*band); b = int(18 - 8*band)
+                  if 180 <= y <= 205 and 80 <= x <= 460: r, g, b = 35, 39, 44
+                  if 175 <= y <= 183 and 80 <= x <= 460: r, g, b = 244, 174, 27
+                  if (x-270)*(x-270) + (y-195)*(y-195) <= 33*33: r, g, b = 98, 105, 111
                   rope_x = 270 + int((y-225)*0.10)
-                  if 225 <= y <= 570 and abs(x-rope_x) <= 3:
-                      r, g, b = 35, 38, 42
-                  # Gold nugget cluster.
+                  if 225 <= y <= 570 and abs(x-rope_x) <= 3: r, g, b = 35, 38, 42
                   for gx,gy,gr in ((328,635,72),(284,670,48),(365,685,42),(312,715,37)):
                       d=(x-gx)*(x-gx)+(y-gy)*(y-gy)
                       if d <= gr*gr:
                           shade=max(0.0,min(1.0,(x-(gx-gr))/(2*gr)))
                           r=int(255-45*shade); g=int(224-80*shade); b=int(57-45*shade)
-                  # Cyan diamond accent.
                   dx,dy=x-150,y-690
-                  if abs(dx)/34 + abs(dy)/55 <= 1:
-                      r,g,b=52,221,255
+                  if abs(dx)/34 + abs(dy)/55 <= 1: r,g,b=52,221,255
                   row += bytes((max(0,min(255,r)),max(0,min(255,g)),max(0,min(255,b))))
               rows.append(bytes(row))
-
           def chunk(kind, data):
               return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
           raw=b''.join(rows)
-          png=b'\x89PNG\r\n\x1a\n'
-          png+=chunk(b'IHDR', struct.pack('>IIBBBBB',w,h,8,2,0,0,0))
-          png+=chunk(b'IDAT', zlib.compress(raw,9))
-          png+=chunk(b'IEND', b'')
+          png=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(raw,9))+chunk(b'IEND',b'')
           (assets/'splash.png').write_bytes(png)
-
-          # Tiny generated arcade SFX; no external copyrighted assets.
           rate=22050
           def tone(name, freqs, duration, amp=0.35, noise=0.0, decay=2.0):
-              frames=[]
-              total=max(1,int(rate*duration))
-              seed=1337
+              frames=[]; total=max(1,int(rate*duration)); seed=1337
               for i in range(total):
-                  t=i/rate
-                  env=(1.0-i/total)**decay
-                  v=0.0
-                  for f,a in freqs:
-                      v += math.sin(2*math.pi*f*t)*a
+                  t=i/rate; env=(1.0-i/total)**decay; v=sum(math.sin(2*math.pi*f*t)*a for f,a in freqs)
                   if noise:
-                      seed=(1103515245*seed+12345)&0x7fffffff
-                      n=((seed/0x7fffffff)*2-1)
-                      v += n*noise
-                  v=max(-1,min(1,v*env*amp))
-                  frames.append(struct.pack('<h',int(v*32767)))
+                      seed=(1103515245*seed+12345)&0x7fffffff; v += ((seed/0x7fffffff)*2-1)*noise
+                  v=max(-1,min(1,v*env*amp)); frames.append(struct.pack('<h',int(v*32767)))
               with wave.open(str(sfx/f'{name}.wav'),'wb') as wf:
                   wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(rate); wf.writeframes(b''.join(frames))
-
-          tone('launch',[(260,1),(420,.35)],.16,.45,0,.8)
-          tone('grab',[(520,1),(760,.5)],.12,.42,0,1.2)
-          tone('coin',[(880,1),(1320,.55)],.22,.38,0,1.4)
-          tone('rock',[(120,1),(170,.3)],.18,.45,.20,1.1)
-          tone('boom',[(68,1),(105,.45)],.46,.65,.70,2.2)
-          tone('mystery',[(440,.5),(660,.6),(990,.35)],.44,.38,0,1.1)
-          tone('fever',[(660,.5),(880,.5),(1100,.5)],.65,.42,0,.55)
-          tone('win',[(523,.5),(659,.5),(784,.5),(1046,.45)],.85,.40,0,.65)
-          tone('fail',[(260,.7),(196,.6),(147,.6)],.70,.37,0,.8)
-          tone('upgrade',[(392,.4),(523,.55),(784,.45)],.42,.38,0,.8)
-          tone('start',[(330,.4),(495,.45),(660,.45)],.38,.36,0,.7)
-          tone('empty',[(210,.7)],.10,.24,.08,1.2)
+          tone('launch',[(260,1),(420,.35)],.16,.45,0,.8); tone('grab',[(520,1),(760,.5)],.12,.42,0,1.2)
+          tone('coin',[(880,1),(1320,.55)],.22,.38,0,1.4); tone('rock',[(120,1),(170,.3)],.18,.45,.20,1.1)
+          tone('boom',[(68,1),(105,.45)],.46,.65,.70,2.2); tone('mystery',[(440,.5),(660,.6),(990,.35)],.44,.38,0,1.1)
+          tone('fever',[(660,.5),(880,.5),(1100,.5)],.65,.42,0,.55); tone('win',[(523,.5),(659,.5),(784,.5),(1046,.45)],.85,.40,0,.65)
+          tone('fail',[(260,.7),(196,.6),(147,.6)],.70,.37,0,.8); tone('upgrade',[(392,.4),(523,.55),(784,.45)],.42,.38,0,.8)
+          tone('start',[(330,.4),(495,.45),(660,.45)],.38,.36,0,.7); tone('empty',[(210,.7)],.10,.24,.08,1.2)
           print('Generated splash and', len(list(sfx.glob('*.wav'))), 'SFX')
           PY
           test -s assets/splash.png
           test -s assets/sfx/launch.wav
 
       - name: Create shared online leaderboard
-        id: leaderboard
         shell: bash
         run: |
           cat > /tmp/leaderboard.json <<'JSON'
           {"entries":[{"id":"seed-rockhound","name":"RockHound","level":8,"score":12840,"stars":18,"combo":7,"updated":0},{"id":"seed-crystalfox","name":"CrystalFox","level":6,"score":9200,"stars":13,"combo":11,"updated":0},{"id":"seed-tunnelrat","name":"TunnelRat","level":4,"score":4750,"stars":9,"combo":5,"updated":0}]}
           JSON
           DEMO_API_KEY='8969a471-87b7-4758-9f34-b090d396d9bb'
-          response=$(curl --fail-with-body -sS -X POST \
-            -H 'Content-Type: application/json; charset=utf-8' \
-            --data-binary @/tmp/leaderboard.json \
-            "https://api.jsonstorage.net/v1/json?apiKey=${DEMO_API_KEY}&name=deepcore-gold-rush-${GITHUB_RUN_ID}")
+          response=$(curl --fail-with-body -sS -X POST -H 'Content-Type: application/json; charset=utf-8' --data-binary @/tmp/leaderboard.json "https://api.jsonstorage.net/v1/json?apiKey=${DEMO_API_KEY}&name=deepcore-gold-rush-${GITHUB_RUN_ID}")
           base_url=$(printf '%s' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["uri"])')
-          if [ -z "$base_url" ]; then
-            echo 'Leaderboard creation did not return a URI' >&2
-            echo "$response" >&2
-            exit 1
-          fi
+          test -n "$base_url"
           url="${base_url}?apiKey=${DEMO_API_KEY}"
           printf '%s\n' "$url" > leaderboard-url.txt
           python3 - "$url" <<'PY'
           from pathlib import Path
           import sys
-          p=Path('scripts/gold_miner.gd')
-          s=p.read_text()
-          s=s.replace('__LEADERBOARD_URL__',sys.argv[1])
-          p.write_text(s)
+          p=Path('scripts/gold_miner.gd'); s=p.read_text(); p.write_text(s.replace('__LEADERBOARD_URL__',sys.argv[1]))
           PY
 
       - name: Configure Android export
@@ -198,10 +153,8 @@ jobs:
         run: |
           cat > smoke_ci.gd <<'GDSCRIPT'
           extends SceneTree
-
           func _initialize() -> void:
               call_deferred("_exercise")
-
           func _exercise() -> void:
               var packed = load("res://Main.tscn")
               var game = packed.instantiate()
