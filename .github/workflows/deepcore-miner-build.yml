@@ -55,6 +55,66 @@ jobs:
           cat scripts/main.part00 scripts/main.part01 scripts/main.part02 scripts/main.part03 > scripts/main.gd
           test -s scripts/main.gd
 
+      - name: Render branded PNG boot splash
+        run: |
+          python3 <<'PY'
+          import math, struct, zlib
+          from pathlib import Path
+
+          w, h = 540, 960
+          cx, cy = 270, 395
+          rows = []
+          for y in range(h):
+              row = bytearray([0])
+              for x in range(w):
+                  dx, dy = x-cx, y-cy
+                  d = math.sqrt((dx/1.0)**2 + (dy/1.05)**2)
+                  glow = max(0.0, 1.0-d/330.0)
+                  vertical = y / h
+                  r = int(4 + 18*glow + 2*(1-vertical))
+                  g = int(7 + 32*glow + 4*(1-vertical))
+                  b = int(16 + 55*glow + 7*(1-vertical))
+
+                  # Main faceted crystal.
+                  diamond = abs(dx)/118.0 + abs(dy)/230.0
+                  if diamond <= 1.0:
+                      edge = max(0.0, min(1.0, (1.0-diamond)*5.0))
+                      side = max(0.0, min(1.0, (dx+118)/236.0))
+                      r = int(65 + 75*side + 40*edge)
+                      g = int(150 + 80*(1-side) + 25*edge)
+                      b = int(235 + 20*edge)
+                  elif diamond <= 1.075:
+                      r, g, b = 188, 248, 255
+
+                  # Internal facet seams.
+                  if diamond < 0.96 and (abs(dx) < 2 or abs(dy) < 2):
+                      r, g, b = 225, 255, 255
+
+                  # Gold mining rail beneath the crystal.
+                  if 250 < abs(dx) + 9999 and 625 <= y <= 638 and 110 <= x <= 430:
+                      r, g, b = 255, 181, 66
+
+                  # Small cyan status dots / industrial motif.
+                  for px in (180, 270, 360):
+                      if (x-px)*(x-px) + (y-700)*(y-700) <= 25:
+                          r, g, b = 92, 226, 255
+
+                  row += bytes((max(0,min(255,r)), max(0,min(255,g)), max(0,min(255,b))))
+              rows.append(bytes(row))
+
+          def chunk(kind, data):
+              return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+
+          raw = b''.join(rows)
+          png = b'\x89PNG\r\n\x1a\n'
+          png += chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+          png += chunk(b'IDAT', zlib.compress(raw, 9))
+          png += chunk(b'IEND', b'')
+          Path('assets/splash.png').write_bytes(png)
+          print('Rendered assets/splash.png', len(png), 'bytes')
+          PY
+          test -s assets/splash.png
+
       - name: Create prototype online leaderboard
         id: leaderboard
         shell: bash
@@ -104,6 +164,7 @@ jobs:
 
       - name: Import project and validate scripts
         run: |
+          rm -rf .godot/imported
           timeout 180 godot --headless --path . --import --quit
 
       - name: Export Android APK
