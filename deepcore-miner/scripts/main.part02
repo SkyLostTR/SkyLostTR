@@ -1,0 +1,75 @@
+ var back:=button("BACK TO MINE",CYAN); back.custom_minimum_size.y=80; back.pressed.connect(_close_panels); v.add_child(back)
+
+func _upgrade(parent:VBoxContainer,title:String,desc:String,kind:String,color:Color) -> void:
+ var p:=PanelContainer.new(); p.custom_minimum_size.y=155; p.add_theme_stylebox_override("panel",style(Color(0.055,0.075,0.12),Color(0.15,0.22,0.36),20)); parent.add_child(p); var h:=HBoxContainer.new(); p.add_child(h); var v:=VBoxContainer.new(); v.size_flags_horizontal=Control.SIZE_EXPAND_FILL; h.add_child(v); v.add_child(label(title,26)); v.add_child(label(desc,18,MUTED)); var lvl:=label("LEVEL 0",19,color); lvl.set_meta("kind",kind); lvl.set_meta("level",true); v.add_child(lvl); var buy:=button("BUY",color,20); buy.custom_minimum_size=Vector2(240,90); buy.set_meta("kind",kind); buy.pressed.connect(_buy.bind(kind)); h.add_child(buy)
+
+func _ranks(root:Control) -> void:
+ ranks=PanelContainer.new(); ranks.position=Vector2(70,410); ranks.size=Vector2(940,1015); ranks.add_theme_stylebox_override("panel",style(Color(0.025,0.038,0.067,0.995),PURPLE.darkened(0.25),30)); ranks.visible=false; root.add_child(ranks)
+ var v:=VBoxContainer.new(); v.add_theme_constant_override("separation",14); ranks.add_child(v); var title:=label("GLOBAL DEEPCORE RANKINGS",32); title.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; v.add_child(title)
+ var nr:=HBoxContainer.new(); v.add_child(nr); name_edit=LineEdit.new(); name_edit.text=player_name; name_edit.max_length=18; name_edit.custom_minimum_size=Vector2(590,70); name_edit.add_theme_font_size_override("font_size",23); nr.add_child(name_edit); var save_name:=button("SAVE NAME",CYAN,20); save_name.size_flags_horizontal=Control.SIZE_EXPAND_FILL; save_name.pressed.connect(_save_name); nr.add_child(save_name)
+ var scroll:=ScrollContainer.new(); scroll.custom_minimum_size.y=690; v.add_child(scroll); rank_list=VBoxContainer.new(); rank_list.size_flags_horizontal=Control.SIZE_EXPAND_FILL; scroll.add_child(rank_list)
+ var actions:=HBoxContainer.new(); v.add_child(actions); var refresh:=button("REFRESH",PURPLE,20); refresh.size_flags_horizontal=Control.SIZE_EXPAND_FILL; refresh.pressed.connect(_get_board); actions.add_child(refresh); var submit:=button("SUBMIT SCORE",GOLD,20); submit.size_flags_horizontal=Control.SIZE_EXPAND_FILL; submit.pressed.connect(_submit); actions.add_child(submit); var back:=button("BACK TO MINE",CYAN,20); back.custom_minimum_size.y=70; back.pressed.connect(_close_panels); v.add_child(back)
+
+func _intro() -> void:
+ var o:=ColorRect.new(); o.color=Color(0.01,0.015,0.03); o.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); o.mouse_filter=Control.MOUSE_FILTER_STOP; get_node("CanvasLayer").get_child(0).add_child(o)
+ var v:=VBoxContainer.new(); v.position=Vector2(90,700); v.size=Vector2(900,420); o.add_child(v); var a:=label("SKYLOST LABS PRESENTS",22,MUTED); a.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; v.add_child(a); var b:=label("DEEPCORE",82); b.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; v.add_child(b); var c:=label("M I N E R",42,CYAN); c.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; v.add_child(c); var d:=label("BREAK  •  UPGRADE  •  DESCEND",21,MUTED); d.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; v.add_child(d)
+ var tw:=create_tween(); tw.tween_interval(1.35); tw.tween_property(o,"modulate:a",0.0,0.55); tw.tween_callback(o.queue_free)
+
+func _mine(auto_hit:=false) -> void:
+ var damage:=power() * (0.38+float(drill_level)*0.16 if auto_hit else 1.0)
+ hp-=damage; particles.restart(); particles.emitting=true; _hit_anim(auto_hit)
+ if not auto_hit: Input.vibrate_handheld(22)
+ if hp<=0: _break()
+ _refresh()
+
+func _hit_anim(auto_hit:bool) -> void:
+ var r:=drill.rotation; var tw:=create_tween(); tw.tween_property(drill,"rotation",r+Vector3(-0.12,0,-0.22 if not auto_hit else -0.1),0.055); tw.tween_property(drill,"rotation",r,0.12)
+ var s:=0.06 if auto_hit else 0.1; var ct:=create_tween(); ct.tween_property(camera,"position",camera_home+Vector3(rng.randf_range(-s,s),rng.randf_range(-s,s),0),0.035); ct.tween_property(camera,"position",camera_home,0.1)
+
+func _break() -> void:
+ var reward:=int(float(current_ore.get("value",15))*(1.0+float(depth-1)*0.055)*(1.0+float(cargo_level)*0.15)); coins+=reward; score+=reward; _say("%s cracked  +%d credits"%[current_ore.get("name","Ore"),reward],current_ore.get("color",CYAN)); Input.vibrate_handheld(55); depth+=1; hp_max=25.0*pow(1.105,float(depth-1)); hp=hp_max; _new_ore(); _save(); if depth%4==0: _submit(true)
+
+func _new_ore() -> void:
+ var pool:=[]; var total:=0.0
+ for o in ores:
+  if depth>=int(o["min"]): pool.append(o); total+=float(o["weight"])
+ var roll:=rng.randf_range(0,total); var c:=0.0; current_ore=pool[0]
+ for o in pool:
+  c+=float(o["weight"])
+  if roll<=c: current_ore=o; break
+ var color:Color=current_ore["color"]; core_light.light_color=color
+ for n in core.get_children():
+  if n is MeshInstance3D:
+   var mi:=n as MeshInstance3D
+   if mi.mesh is CylinderMesh: mi.material_override=mat(color,0.12,0.28,true)
+
+func power() -> float: return 4.2*pow(1.34,float(pick_level-1))
+func cost(kind:String) -> int:
+ if kind=="pick": return int(80.0*pow(1.72,float(pick_level-1)))
+ if kind=="drill": return int(180.0*pow(1.85,float(drill_level)))
+ return int(140.0*pow(1.78,float(cargo_level)))
+
+func _buy(kind:String) -> void:
+ var c:=cost(kind)
+ if coins<c: _say("Need %d credits"%c,Color(1,0.35,0.4)); return
+ coins-=c
+ if kind=="pick": pick_level+=1
+ elif kind=="drill": drill_level+=1
+ else: cargo_level+=1
+ _configure_auto(); _save(); _refresh(); _say("Upgrade installed",Color(0.35,0.95,0.6)); Input.vibrate_handheld(35)
+
+func _auto() -> void:
+ auto_timer=Timer.new(); auto_timer.timeout.connect(func(): if drill_level>0 and not shop.visible and not ranks.visible: _mine(true)); add_child(auto_timer); _configure_auto()
+
+func _configure_auto() -> void:
+ if not auto_timer: return
+ if drill_level<=0: auto_timer.stop(); return
+ auto_timer.wait_time=max(0.34,2.1-float(drill_level)*0.13); auto_timer.start()
+
+func _offline_reward() -> void:
+ if last_saved<=0 or drill_level<=0: return
+ var seconds:=clampi(int(Time.get_unix_time_from_system())-last_saved,0,14400)
+ if seconds<30: return
+ var earned:=int(float(seconds)*float(drill_level)*power()*0.18*(1.0+float(cargo_level)*0.08)); coins+=earned; score+=earned; _say("Auto drill recovered +%d offline credits"%earned,Color(0.35,0.95,0.6))
+
+func _show_shop() -> void: ranks.visible=false; shop.visible=true; _refresh()
