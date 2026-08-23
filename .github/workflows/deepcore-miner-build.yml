@@ -74,8 +74,6 @@ jobs:
                   r = int(4 + 18*glow + 2*(1-vertical))
                   g = int(7 + 32*glow + 4*(1-vertical))
                   b = int(16 + 55*glow + 7*(1-vertical))
-
-                  # Main faceted crystal.
                   diamond = abs(dx)/118.0 + abs(dy)/230.0
                   if diamond <= 1.0:
                       edge = max(0.0, min(1.0, (1.0-diamond)*5.0))
@@ -85,20 +83,13 @@ jobs:
                       b = int(235 + 20*edge)
                   elif diamond <= 1.075:
                       r, g, b = 188, 248, 255
-
-                  # Internal facet seams.
                   if diamond < 0.96 and (abs(dx) < 2 or abs(dy) < 2):
                       r, g, b = 225, 255, 255
-
-                  # Gold mining rail beneath the crystal.
-                  if 250 < abs(dx) + 9999 and 625 <= y <= 638 and 110 <= x <= 430:
+                  if 625 <= y <= 638 and 110 <= x <= 430:
                       r, g, b = 255, 181, 66
-
-                  # Small cyan status dots / industrial motif.
                   for px in (180, 270, 360):
                       if (x-px)*(x-px) + (y-700)*(y-700) <= 25:
                           r, g, b = 92, 226, 255
-
                   row += bytes((max(0,min(255,r)), max(0,min(255,g)), max(0,min(255,b))))
               rows.append(bytes(row))
 
@@ -166,6 +157,21 @@ jobs:
         run: |
           rm -rf .godot/imported
           timeout 180 godot --headless --path . --import --quit
+
+      - name: Smoke launch main scene
+        run: |
+          set +e
+          timeout 20 godot --headless --path . --rendering-method gl_compatibility --quit-after 8 > /tmp/deepcore-smoke.log 2>&1
+          rc=$?
+          set -e
+          cat /tmp/deepcore-smoke.log
+          if [ "$rc" -ne 0 ]; then
+            exit "$rc"
+          fi
+          if grep -Eiq 'SCRIPT ERROR|Invalid assignment|Invalid call|Attempt to call|Cannot call method|Parse Error' /tmp/deepcore-smoke.log; then
+            echo 'Runtime smoke test found a game error.' >&2
+            exit 1
+          fi
 
       - name: Export Android APK
         run: |
