@@ -36,6 +36,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install Android packages
         run: |
@@ -60,15 +62,14 @@ jobs:
           cat > /tmp/leaderboard.json <<'JSON'
           {"entries":[{"id":"seed-rockhound","name":"RockHound","score":12500,"depth":38,"updated":0},{"id":"seed-crystalfox","name":"CrystalFox","score":7400,"depth":27,"updated":0},{"id":"seed-tunnelrat","name":"TunnelRat","score":3150,"depth":18,"updated":0}]}
           JSON
-          headers=$(mktemp)
-          curl --fail-with-body -sS -D "$headers" -o /tmp/create-response.txt -X POST \
+          response=$(curl --fail-with-body -sS -X POST \
             -H 'Content-Type: application/json' \
             --data-binary @/tmp/leaderboard.json \
-            https://jsonblob.com/api/jsonBlob
-          url=$(awk 'BEGIN{IGNORECASE=1} /^location:/ {gsub("\r",""); print $2}' "$headers" | tail -1)
+            https://api.jsonstorage.net/v1/json)
+          url=$(printf '%s' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["uri"])')
           if [ -z "$url" ]; then
-            echo 'Leaderboard creation did not return Location header' >&2
-            cat "$headers" >&2
+            echo 'Leaderboard creation did not return a URI' >&2
+            echo "$response" >&2
             exit 1
           fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
