@@ -1,0 +1,71 @@
+func _show_ranks() -> void: shop.visible=false; ranks.visible=true; name_edit.text=player_name; _get_board()
+func _close_panels() -> void: shop.visible=false; ranks.visible=false
+
+func _refresh() -> void:
+ coins_lbl.text=str(coins); depth_lbl.text="%d m"%depth; power_lbl.text="%.1f"%power(); ore_lbl.text=String(current_ore.get("name","Ore")).to_upper(); ore_lbl.add_theme_color_override("font_color",current_ore.get("color",CYAN)); reward_lbl.text="+%d"%int(float(current_ore.get("value",15))*(1.0+float(depth-1)*0.055)*(1.0+float(cargo_level)*0.15)); hp_bar.max_value=hp_max; hp_bar.value=hp; mine_btn.text="MINE CORE   %.0f%%"%(hp/hp_max*100.0)
+ for n in _nodes(shop):
+  if n.has_meta("kind"):
+   var k:=String(n.get_meta("kind"))
+   if n is Button: n.text="BUY\n%d"%cost(k); n.disabled=coins<cost(k)
+   elif n is Label and n.has_meta("level"): n.text="LEVEL %d"%(pick_level if k=="pick" else drill_level if k=="drill" else cargo_level)
+
+func _nodes(root:Node) -> Array:
+ var a:=[]
+ for n in root.get_children(): a.append(n); a.append_array(_nodes(n))
+ return a
+
+func _say(text:String,color:Color) -> void:
+ if not toast: return
+ toast.text=text; toast.add_theme_color_override("font_color",color); toast.modulate.a=0; var tw:=create_tween(); tw.tween_property(toast,"modulate:a",1.0,0.15); tw.tween_interval(1.25); tw.tween_property(toast,"modulate:a",0.0,0.3)
+
+func _network() -> void:
+ http=HTTPRequest.new(); http.timeout=8; http.request_completed.connect(_http_done); add_child(http)
+
+func _get_board() -> void:
+ if http_busy: return
+ http_busy=true; http_mode="get"; status_lbl.text="SYNCING"; var e:=http.request(LEADERBOARD_URL,PackedStringArray(["Accept: application/json"])); if e!=OK: http_busy=false; _net_fail()
+
+func _submit(silent:=false) -> void:
+ if http_busy or LEADERBOARD_URL.begins_with("__"): return
+ http_busy=true; http_mode="submit_get"; if not silent: status_lbl.text="SYNCING"; var e:=http.request(LEADERBOARD_URL,PackedStringArray(["Accept: application/json"])); if e!=OK: http_busy=false; _net_fail()
+
+func _http_done(_result:int,code:int,_headers:PackedStringArray,body:PackedByteArray) -> void:
+ http_busy=false
+ if code<200 or code>=300: _net_fail(); return
+ var data=JSON.parse_string(body.get_string_from_utf8()); if not data is Dictionary: data={"entries":[]}; if not data.has("entries"): data["entries"]=[]
+ if http_mode=="get": _draw_board(data); _online(true)
+ elif http_mode=="submit_get":
+  var entries:Array=data["entries"]; var found:=false
+  for i in range(entries.size()):
+   if String(entries[i].get("id",""))==player_id: entries[i]=entry(); found=true; break
+  if not found: entries.append(entry())
+  entries.sort_custom(func(a,b): return int(a.get("score",0))>int(b.get("score",0))); if entries.size()>50: entries.resize(50); data["entries"]=entries; pending=data; call_deferred("_put")
+ elif http_mode=="put": _draw_board(pending); _online(true)
+
+func _put() -> void:
+ http_busy=true; http_mode="put"; var e:=http.request(LEADERBOARD_URL,PackedStringArray(["Content-Type: application/json","Accept: application/json"]),HTTPClient.METHOD_PUT,JSON.stringify(pending)); if e!=OK: http_busy=false; _net_fail()
+
+func entry() -> Dictionary: return {"id":player_id,"name":player_name,"score":score,"depth":depth,"updated":int(Time.get_unix_time_from_system())}
+
+func _draw_board(data:Dictionary) -> void:
+ for n in rank_list.get_children(): n.queue_free()
+ var entries:Array=data.get("entries",[]); entries.sort_custom(func(a,b): return int(a.get("score",0))>int(b.get("score",0)))
+ for i in range(mini(entries.size(),20)):
+  var e:Dictionary=entries[i]; var row:=HBoxContainer.new(); row.custom_minimum_size.y=62; rank_list.add_child(row); var r:=label("#%d"%(i+1),21,GOLD if i<3 else MUTED); r.custom_minimum_size.x=70; row.add_child(r); var n:=label(String(e.get("name","Miner")),21); n.size_flags_horizontal=Control.SIZE_EXPAND_FILL; row.add_child(n); var d:=label("%dm"%int(e.get("depth",1)),18,CYAN); d.custom_minimum_size.x=100; row.add_child(d); var s:=label(str(int(e.get("score",0))),21,GOLD); s.custom_minimum_size.x=180; s.horizontal_alignment=HORIZONTAL_ALIGNMENT_RIGHT; row.add_child(s)
+
+func _save_name() -> void:
+ var n:=name_edit.text.strip_edges(); if n.length()<2: _say("Name must be at least 2 characters",Color(1,0.35,0.4)); return
+ player_name=n.substr(0,18); _save(); _submit(); _say("Miner identity saved",Color(0.35,0.95,0.6))
+
+func _net_fail() -> void: _online(false); if ranks.visible: for n in rank_list.get_children(): n.queue_free(); var l:=label("Leaderboard unavailable. Progress is safe locally.",21,Color(1,0.35,0.4)); rank_list.add_child(l)
+func _online(ok:bool) -> void: status_lbl.text="ONLINE" if ok else "OFFLINE"; status_lbl.add_theme_color_override("font_color",Color(0.35,0.95,0.6) if ok else Color(1,0.35,0.4))
+
+func _save() -> void:
+ last_saved=int(Time.get_unix_time_from_system()); var f:=FileAccess.open(SAVE_PATH,FileAccess.WRITE); if f: f.store_string(JSON.stringify({"coins":coins,"score":score,"depth":depth,"pick":pick_level,"drill":drill_level,"cargo":cargo_level,"hp":hp,"hp_max":hp_max,"id":player_id,"name":player_name,"last":last_saved}))
+
+func _load() -> void:
+ player_id="%08x%08x"%[rng.randi(),rng.randi()]; player_name="Miner-%04d"%rng.randi_range(1000,9999)
+ if not FileAccess.file_exists(SAVE_PATH): return
+ var f:=FileAccess.open(SAVE_PATH,FileAccess.READ); if not f: return
+ var d=JSON.parse_string(f.get_as_text()); if not d is Dictionary: return
+ coins=int(d.get("coins",0)); score=int(d.get("score",0)); depth=maxi(1,int(d.get("depth",1))); pick_level=maxi(1,int(d.get("pick",1))); drill_level=maxi(0,int(d.get("drill",0))); cargo_level=maxi(0,int(d.get("cargo",0))); hp_max=float(d.get("hp_max",25.0*pow(1.105,float(depth-1)))); hp=clampf(float(d.get("hp",hp_max)),0.1,hp_max); player_id=String(d.get("id",player_id)); player_name=String(d.get("name",player_name)); last_saved=int(d.get("last",0))
