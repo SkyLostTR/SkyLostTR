@@ -1,0 +1,47 @@
+ var body:=MeshInstance3D.new(); body.mesh=body_mesh; body.material_override=mat(Color(0.05,0.07,0.1),0.2,0.7); drill.add_child(body)
+ var motor_mesh:=CylinderMesh.new(); motor_mesh.top_radius=0.36; motor_mesh.bottom_radius=0.36; motor_mesh.height=0.82; motor_mesh.radial_segments=12
+ var motor:=MeshInstance3D.new(); motor.mesh=motor_mesh; motor.material_override=mat(Color(0.28,0.34,0.42),0.75,0.28); motor.rotation_degrees.x=90; motor.position=Vector3(0,0,-0.95); drill.add_child(motor)
+ var bit_mesh:=CylinderMesh.new(); bit_mesh.top_radius=0; bit_mesh.bottom_radius=0.22; bit_mesh.height=1.35; bit_mesh.radial_segments=10
+ var bit:=MeshInstance3D.new(); bit.mesh=bit_mesh; bit.material_override=mat(GOLD,0.55,0.3); bit.rotation_degrees.x=90; bit.position=Vector3(0,0,-1.9); drill.add_child(bit)
+ var light:=OmniLight3D.new(); light.position=Vector3(0,0,-1.5); light.light_color=GOLD; light.light_energy=1.0; light.omni_range=3.5; drill.add_child(light)
+
+func _particles() -> void:
+ particles=GPUParticles3D.new(); particles.amount=32; particles.lifetime=0.6; particles.one_shot=true; particles.emitting=false; particles.position=Vector3(0,0.1,-0.1); core.add_child(particles)
+ var pm:=ParticleProcessMaterial.new(); pm.direction=Vector3(0,0.6,1); pm.spread=58; pm.initial_velocity_min=2.2; pm.initial_velocity_max=5.0; pm.gravity=Vector3(0,-5.5,0); pm.scale_min=0.035; pm.scale_max=0.11; pm.color=CYAN; particles.process_material=pm
+ var sm:=SphereMesh.new(); sm.radius=0.055; sm.height=0.11; sm.radial_segments=5; sm.rings=3; sm.material=mat(CYAN,0,0.35,true); particles.draw_pass_1=sm
+
+func style(bg: Color, accent:=Color.TRANSPARENT, radius:=22) -> StyleBoxFlat:
+ var s:=StyleBoxFlat.new(); s.bg_color=bg; s.corner_radius_top_left=radius; s.corner_radius_top_right=radius; s.corner_radius_bottom_left=radius; s.corner_radius_bottom_right=radius
+ s.border_width_left=2; s.border_width_right=2; s.border_width_top=2; s.border_width_bottom=2; s.border_color=accent
+ return s
+
+func label(text:String,size:int,color:=TEXT) -> Label:
+ var l:=Label.new(); l.text=text; l.add_theme_font_size_override("font_size",size); l.add_theme_color_override("font_color",color); return l
+
+func button(text:String,accent:Color,size:=24) -> Button:
+ var b:=Button.new(); b.text=text; b.add_theme_font_size_override("font_size",size); b.add_theme_color_override("font_color",TEXT); b.add_theme_stylebox_override("normal",style(accent.darkened(0.62),accent.darkened(0.15),22)); b.add_theme_stylebox_override("pressed",style(accent.darkened(0.74),accent,22)); return b
+
+func _ui() -> void:
+ var canvas:=CanvasLayer.new(); add_child(canvas)
+ var root:=Control.new(); root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); canvas.add_child(root)
+ var top:=PanelContainer.new(); top.position=Vector2(34,55); top.size=Vector2(1012,185); top.add_theme_stylebox_override("panel",style(PANEL,Color(0.18,0.28,0.45,0.6),28)); root.add_child(top)
+ var tv:=VBoxContainer.new(); tv.add_theme_constant_override("separation",8); top.add_child(tv)
+ var brand:=HBoxContainer.new(); tv.add_child(brand); brand.add_child(label("  DEEPCORE MINER",32,TEXT)); var sp:=Control.new(); sp.size_flags_horizontal=Control.SIZE_EXPAND_FILL; brand.add_child(sp); status_lbl=label("ONLINE  ",20,Color(0.35,0.95,0.6)); brand.add_child(status_lbl)
+ var stats:=HBoxContainer.new(); tv.add_child(stats); coins_lbl=_stat(stats,"CREDITS",GOLD); depth_lbl=_stat(stats,"DEPTH",CYAN); power_lbl=_stat(stats,"POWER",PURPLE)
+ var card:=PanelContainer.new(); card.position=Vector2(145,275); card.size=Vector2(790,175); card.add_theme_stylebox_override("panel",style(Color(0.02,0.035,0.06,0.9),Color(0.2,0.45,0.65,0.5),26)); root.add_child(card)
+ var cv:=VBoxContainer.new(); card.add_child(cv); var ch:=HBoxContainer.new(); cv.add_child(ch); ore_lbl=label("ORE",27,CYAN); ch.add_child(ore_lbl); var cs:=Control.new(); cs.size_flags_horizontal=Control.SIZE_EXPAND_FILL; ch.add_child(cs); reward_lbl=label("+0",27,GOLD); ch.add_child(reward_lbl); hp_bar=ProgressBar.new(); hp_bar.custom_minimum_size.y=28; hp_bar.show_percentage=false; hp_bar.add_theme_stylebox_override("background",style(Color(0.01,0.015,0.03),Color.TRANSPARENT,14)); hp_bar.add_theme_stylebox_override("fill",style(Color(0.18,0.74,0.95),Color.TRANSPARENT,14)); cv.add_child(hp_bar); var hint:=label("Tap to fracture the core • rarer veins unlock deeper underground",19,MUTED); hint.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; cv.add_child(hint)
+ toast=label("",27,TEXT); toast.position=Vector2(70,1270); toast.size=Vector2(940,60); toast.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; toast.modulate.a=0; root.add_child(toast)
+ mine_btn=button("MINE CORE",CYAN,38); mine_btn.position=Vector2(185,1450); mine_btn.size=Vector2(710,150); mine_btn.pressed.connect(_mine.bind(false)); root.add_child(mine_btn)
+ var nav:=HBoxContainer.new(); nav.position=Vector2(60,1655); nav.size=Vector2(960,145); nav.add_theme_constant_override("separation",16); root.add_child(nav)
+ var b1:=button("UPGRADES",GOLD); b1.size_flags_horizontal=Control.SIZE_EXPAND_FILL; b1.pressed.connect(_show_shop); nav.add_child(b1)
+ var b2:=button("CORE",CYAN); b2.size_flags_horizontal=Control.SIZE_EXPAND_FILL; b2.pressed.connect(_close_panels); nav.add_child(b2)
+ var b3:=button("RANKINGS",PURPLE); b3.size_flags_horizontal=Control.SIZE_EXPAND_FILL; b3.pressed.connect(_show_ranks); nav.add_child(b3)
+ _shop(root); _ranks(root)
+
+func _stat(parent:HBoxContainer,title:String,color:Color) -> Label:
+ var v:=VBoxContainer.new(); v.size_flags_horizontal=Control.SIZE_EXPAND_FILL; parent.add_child(v); v.add_child(label(title,16,MUTED)); var l:=label("0",29,color); v.add_child(l); return l
+
+func _shop(root:Control) -> void:
+ shop=PanelContainer.new(); shop.position=Vector2(70,520); shop.size=Vector2(940,790); shop.add_theme_stylebox_override("panel",style(Color(0.025,0.038,0.067,0.99),Color(0.28,0.38,0.62,0.7),30)); shop.visible=false; root.add_child(shop)
+ var v:=VBoxContainer.new(); v.add_theme_constant_override("separation",16); shop.add_child(v); var title:=label("MINING RIG UPGRADES",34); title.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER; v.add_child(title); v.add_child(label("Spend credits to push deeper and climb the global board.",20,MUTED))
+ _upgrade(v,"PICK POWER","More damage per tap","pick",CYAN); _upgrade(v,"AUTO DRILL","Mines automatically + offline earnings","drill",GOLD); _upgrade(v,"CARGO MATRIX","Higher reward from every vein","cargo",PURPLE)
