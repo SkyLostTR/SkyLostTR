@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="80%"><stop offset="0" stop-color="#172440"/><stop offset=".5" stop-color="#090f1d"/><stop offset="1" stop-color="#03050a"/></radialGradient>
+    <linearGradient id="crystal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#70faff"/><stop offset=".48" stop-color="#5ac9ff"/><stop offset="1" stop-color="#945dff"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="18" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#bg)"/>
+  <circle cx="540" cy="780" r="260" fill="#35d8ff" opacity=".08"/>
+  <g filter="url(#glow)">
+    <path d="M540 454l164 250-164 342-164-342z" fill="url(#crystal)" stroke="#c9fdff" stroke-width="18"/>
+    <path d="M540 454v592M376 704h328" stroke="#e5ffff" stroke-opacity=".22" stroke-width="12"/>
+  </g>
+  <text x="540" y="1230" text-anchor="middle" fill="#f5f8ff" font-family="sans-serif" font-size="96" font-weight="800" letter-spacing="8">DEEPCORE</text>
+  <text x="540" y="1328" text-anchor="middle" fill="#70eaff" font-family="sans-serif" font-size="54" font-weight="700" letter-spacing="18">MINER</text>
+  <text x="540" y="1438" text-anchor="middle" fill="#8593ad" font-family="sans-serif" font-size="28" letter-spacing="6">BREAK  •  UPGRADE  •  DESCEND</text>
+</svg>
