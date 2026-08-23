@@ -1,12 +1,12 @@
-; Deepcore Miner
+; Deepcore Miner: Gold Rush
 config_version=5
 
 [application]
-config/name="Deepcore Miner"
+config/name="Deepcore Miner: Gold Rush"
 run/main_scene="res://Main.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
 boot_splash/image="res://assets/splash.png"
-boot_splash/bg_color=Color(0.015, 0.02, 0.035, 1)
+boot_splash/bg_color=Color(0.055, 0.025, 0.012, 1)
 boot_splash/show_image=true
 config/icon="res://assets/icon.svg"
 
