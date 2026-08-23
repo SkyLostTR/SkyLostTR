@@ -1,15 +1,9 @@
-name: Deepcore Miner Android
+name: Deepcore Gold Rush Android
 
 on:
   push:
     branches:
       - build/deepcore-miner-android
-    paths:
-      - 'deepcore-miner/**'
-      - '.github/workflows/deepcore-miner-build.yml'
-  pull_request:
-    branches:
-      - main
     paths:
       - 'deepcore-miner/**'
       - '.github/workflows/deepcore-miner-build.yml'
@@ -29,7 +23,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -50,74 +44,116 @@ jobs:
           use-dotnet: false
           include-templates: true
 
-      - name: Assemble gameplay script
-        run: |
-          cat scripts/main.part00 scripts/main.part01 scripts/main.part02 scripts/main.part03 > scripts/main.gd
-          test -s scripts/main.gd
-
-      - name: Render branded PNG boot splash
+      - name: Generate branded splash and procedural SFX
         run: |
           python3 <<'PY'
-          import math, struct, zlib
+          import math, struct, wave, zlib
           from pathlib import Path
 
+          assets = Path('assets')
+          sfx = assets / 'sfx'
+          sfx.mkdir(parents=True, exist_ok=True)
+
+          # Portrait boot splash: original claw + gold composition.
           w, h = 540, 960
-          cx, cy = 270, 395
           rows = []
           for y in range(h):
               row = bytearray([0])
               for x in range(w):
-                  dx, dy = x-cx, y-cy
-                  d = math.sqrt((dx/1.0)**2 + (dy/1.05)**2)
-                  glow = max(0.0, 1.0-d/330.0)
                   vertical = y / h
-                  r = int(4 + 18*glow + 2*(1-vertical))
-                  g = int(7 + 32*glow + 4*(1-vertical))
-                  b = int(16 + 55*glow + 7*(1-vertical))
-                  diamond = abs(dx)/118.0 + abs(dy)/230.0
-                  if diamond <= 1.0:
-                      edge = max(0.0, min(1.0, (1.0-diamond)*5.0))
-                      side = max(0.0, min(1.0, (dx+118)/236.0))
-                      r = int(65 + 75*side + 40*edge)
-                      g = int(150 + 80*(1-side) + 25*edge)
-                      b = int(235 + 20*edge)
-                  elif diamond <= 1.075:
-                      r, g, b = 188, 248, 255
-                  if diamond < 0.96 and (abs(dx) < 2 or abs(dy) < 2):
-                      r, g, b = 225, 255, 255
-                  if 625 <= y <= 638 and 110 <= x <= 430:
-                      r, g, b = 255, 181, 66
-                  for px in (180, 270, 360):
-                      if (x-px)*(x-px) + (y-700)*(y-700) <= 25:
-                          r, g, b = 92, 226, 255
-                  row += bytes((max(0,min(255,r)), max(0,min(255,g)), max(0,min(255,b))))
+                  r = int(24 + 34*(1-vertical))
+                  g = int(10 + 14*(1-vertical))
+                  b = int(6 + 8*(1-vertical))
+                  # Layered soil.
+                  if y > 260:
+                      band = (y-260) / 700
+                      r = int(92 - 50*band)
+                      g = int(38 - 20*band)
+                      b = int(18 - 8*band)
+                  # Platform.
+                  if 180 <= y <= 205 and 80 <= x <= 460:
+                      r, g, b = 35, 39, 44
+                  if 175 <= y <= 183 and 80 <= x <= 460:
+                      r, g, b = 244, 174, 27
+                  # Winch drum.
+                  if (x-270)*(x-270) + (y-195)*(y-195) <= 33*33:
+                      r, g, b = 98, 105, 111
+                  # Rope.
+                  rope_x = 270 + int((y-225)*0.10)
+                  if 225 <= y <= 570 and abs(x-rope_x) <= 3:
+                      r, g, b = 35, 38, 42
+                  # Gold nugget cluster.
+                  for gx,gy,gr in ((328,635,72),(284,670,48),(365,685,42),(312,715,37)):
+                      d=(x-gx)*(x-gx)+(y-gy)*(y-gy)
+                      if d <= gr*gr:
+                          shade=max(0.0,min(1.0,(x-(gx-gr))/(2*gr)))
+                          r=int(255-45*shade); g=int(224-80*shade); b=int(57-45*shade)
+                  # Cyan diamond accent.
+                  dx,dy=x-150,y-690
+                  if abs(dx)/34 + abs(dy)/55 <= 1:
+                      r,g,b=52,221,255
+                  row += bytes((max(0,min(255,r)),max(0,min(255,g)),max(0,min(255,b))))
               rows.append(bytes(row))
 
           def chunk(kind, data):
               return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+          raw=b''.join(rows)
+          png=b'\x89PNG\r\n\x1a\n'
+          png+=chunk(b'IHDR', struct.pack('>IIBBBBB',w,h,8,2,0,0,0))
+          png+=chunk(b'IDAT', zlib.compress(raw,9))
+          png+=chunk(b'IEND', b'')
+          (assets/'splash.png').write_bytes(png)
 
-          raw = b''.join(rows)
-          png = b'\x89PNG\r\n\x1a\n'
-          png += chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
-          png += chunk(b'IDAT', zlib.compress(raw, 9))
-          png += chunk(b'IEND', b'')
-          Path('assets/splash.png').write_bytes(png)
-          print('Rendered assets/splash.png', len(png), 'bytes')
+          # Tiny generated arcade SFX; no external copyrighted assets.
+          rate=22050
+          def tone(name, freqs, duration, amp=0.35, noise=0.0, decay=2.0):
+              frames=[]
+              total=max(1,int(rate*duration))
+              seed=1337
+              for i in range(total):
+                  t=i/rate
+                  env=(1.0-i/total)**decay
+                  v=0.0
+                  for f,a in freqs:
+                      v += math.sin(2*math.pi*f*t)*a
+                  if noise:
+                      seed=(1103515245*seed+12345)&0x7fffffff
+                      n=((seed/0x7fffffff)*2-1)
+                      v += n*noise
+                  v=max(-1,min(1,v*env*amp))
+                  frames.append(struct.pack('<h',int(v*32767)))
+              with wave.open(str(sfx/f'{name}.wav'),'wb') as wf:
+                  wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(rate); wf.writeframes(b''.join(frames))
+
+          tone('launch',[(260,1),(420,.35)],.16,.45,0,.8)
+          tone('grab',[(520,1),(760,.5)],.12,.42,0,1.2)
+          tone('coin',[(880,1),(1320,.55)],.22,.38,0,1.4)
+          tone('rock',[(120,1),(170,.3)],.18,.45,.20,1.1)
+          tone('boom',[(68,1),(105,.45)],.46,.65,.70,2.2)
+          tone('mystery',[(440,.5),(660,.6),(990,.35)],.44,.38,0,1.1)
+          tone('fever',[(660,.5),(880,.5),(1100,.5)],.65,.42,0,.55)
+          tone('win',[(523,.5),(659,.5),(784,.5),(1046,.45)],.85,.40,0,.65)
+          tone('fail',[(260,.7),(196,.6),(147,.6)],.70,.37,0,.8)
+          tone('upgrade',[(392,.4),(523,.55),(784,.45)],.42,.38,0,.8)
+          tone('start',[(330,.4),(495,.45),(660,.45)],.38,.36,0,.7)
+          tone('empty',[(210,.7)],.10,.24,.08,1.2)
+          print('Generated splash and', len(list(sfx.glob('*.wav'))), 'SFX')
           PY
           test -s assets/splash.png
+          test -s assets/sfx/launch.wav
 
-      - name: Create prototype online leaderboard
+      - name: Create shared online leaderboard
         id: leaderboard
         shell: bash
         run: |
           cat > /tmp/leaderboard.json <<'JSON'
-          {"entries":[{"id":"seed-rockhound","name":"RockHound","score":12500,"depth":38,"updated":0},{"id":"seed-crystalfox","name":"CrystalFox","score":7400,"depth":27,"updated":0},{"id":"seed-tunnelrat","name":"TunnelRat","score":3150,"depth":18,"updated":0}]}
+          {"entries":[{"id":"seed-rockhound","name":"RockHound","level":8,"score":12840,"stars":18,"combo":7,"updated":0},{"id":"seed-crystalfox","name":"CrystalFox","level":6,"score":9200,"stars":13,"combo":11,"updated":0},{"id":"seed-tunnelrat","name":"TunnelRat","level":4,"score":4750,"stars":9,"combo":5,"updated":0}]}
           JSON
           DEMO_API_KEY='8969a471-87b7-4758-9f34-b090d396d9bb'
           response=$(curl --fail-with-body -sS -X POST \
             -H 'Content-Type: application/json; charset=utf-8' \
             --data-binary @/tmp/leaderboard.json \
-            "https://api.jsonstorage.net/v1/json?apiKey=${DEMO_API_KEY}&name=deepcore-miner-${GITHUB_RUN_ID}")
+            "https://api.jsonstorage.net/v1/json?apiKey=${DEMO_API_KEY}&name=deepcore-gold-rush-${GITHUB_RUN_ID}")
           base_url=$(printf '%s' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["uri"])')
           if [ -z "$base_url" ]; then
             echo 'Leaderboard creation did not return a URI' >&2
@@ -125,14 +161,13 @@ jobs:
             exit 1
           fi
           url="${base_url}?apiKey=${DEMO_API_KEY}"
-          echo "url=$url" >> "$GITHUB_OUTPUT"
           printf '%s\n' "$url" > leaderboard-url.txt
           python3 - "$url" <<'PY'
           from pathlib import Path
           import sys
-          p=Path('scripts/main.gd')
+          p=Path('scripts/gold_miner.gd')
           s=p.read_text()
-          s=s.replace('__LEADERBOARD_URL__', sys.argv[1])
+          s=s.replace('__LEADERBOARD_URL__',sys.argv[1])
           p.write_text(s)
           PY
 
@@ -158,16 +193,37 @@ jobs:
           rm -rf .godot/imported
           timeout 180 godot --headless --path . --import --quit
 
-      - name: Smoke launch main scene
+      - name: Gameplay runtime smoke test
+        shell: bash
         run: |
+          cat > smoke_ci.gd <<'GDSCRIPT'
+          extends SceneTree
+
+          func _initialize() -> void:
+              call_deferred("_exercise")
+
+          func _exercise() -> void:
+              var packed = load("res://Main.tscn")
+              var game = packed.instantiate()
+              root.add_child(game)
+              await process_frame
+              game._dismiss_intro(1)
+              await process_frame
+              game._launch_hook()
+              await create_timer(2.0).timeout
+              game._toggle_pause()
+              await create_timer(0.15).timeout
+              game._toggle_pause()
+              await create_timer(0.15).timeout
+              quit(0)
+          GDSCRIPT
           set +e
-          timeout 20 godot --headless --path . --rendering-method gl_compatibility --quit-after 8 > /tmp/deepcore-smoke.log 2>&1
+          godot --headless --path . --rendering-method gl_compatibility -s res://smoke_ci.gd > /tmp/deepcore-smoke.log 2>&1
           rc=$?
           set -e
           cat /tmp/deepcore-smoke.log
-          if [ "$rc" -ne 0 ]; then
-            exit "$rc"
-          fi
+          rm -f smoke_ci.gd
+          if [ "$rc" -ne 0 ]; then exit "$rc"; fi
           if grep -Eiq 'SCRIPT ERROR|Invalid assignment|Invalid call|Attempt to call|Cannot call method|Parse Error' /tmp/deepcore-smoke.log; then
             echo 'Runtime smoke test found a game error.' >&2
             exit 1
@@ -179,22 +235,24 @@ jobs:
           godot --headless --path . --export-debug Android build/deepcore-miner.apk
           test -s build/deepcore-miner.apk
           "$ANDROID_HOME/build-tools/35.0.1/aapt" dump badging build/deepcore-miner.apk | head -30
+          sha256sum build/deepcore-miner.apk | tee build/SHA256SUMS.txt
 
       - name: Package source snapshot
         run: |
           rm -rf package-source
           mkdir -p package-source
           cp -a project.godot Main.tscn export_presets.cfg default_bus_layout.tres assets scripts README.md leaderboard-url.txt package-source/
-          rm -f package-source/scripts/main.part00 package-source/scripts/main.part01 package-source/scripts/main.part02 package-source/scripts/main.part03
+          rm -f package-source/scripts/main.part00 package-source/scripts/main.part01 package-source/scripts/main.part02 package-source/scripts/main.part03 package-source/scripts/main.gd
           (cd package-source && zip -qr ../build/deepcore-miner-source.zip .)
 
       - name: Upload Android build
         uses: actions/upload-artifact@v4
         with:
-          name: deepcore-miner-android
+          name: deepcore-gold-rush-android
           path: |
             deepcore-miner/build/deepcore-miner.apk
             deepcore-miner/build/deepcore-miner-source.zip
+            deepcore-miner/build/SHA256SUMS.txt
             deepcore-miner/leaderboard-url.txt
           retention-days: 7
           if-no-files-found: error
