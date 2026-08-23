@@ -62,16 +62,18 @@ jobs:
           cat > /tmp/leaderboard.json <<'JSON'
           {"entries":[{"id":"seed-rockhound","name":"RockHound","score":12500,"depth":38,"updated":0},{"id":"seed-crystalfox","name":"CrystalFox","score":7400,"depth":27,"updated":0},{"id":"seed-tunnelrat","name":"TunnelRat","score":3150,"depth":18,"updated":0}]}
           JSON
+          DEMO_API_KEY='8969a471-87b7-4758-9f34-b090d396d9bb'
           response=$(curl --fail-with-body -sS -X POST \
-            -H 'Content-Type: application/json' \
+            -H 'Content-Type: application/json; charset=utf-8' \
             --data-binary @/tmp/leaderboard.json \
-            https://api.jsonstorage.net/v1/json)
-          url=$(printf '%s' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["uri"])')
-          if [ -z "$url" ]; then
+            "https://api.jsonstorage.net/v1/json?apiKey=${DEMO_API_KEY}&name=deepcore-miner-${GITHUB_RUN_ID}")
+          base_url=$(printf '%s' "$response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["uri"])')
+          if [ -z "$base_url" ]; then
             echo 'Leaderboard creation did not return a URI' >&2
             echo "$response" >&2
             exit 1
           fi
+          url="${base_url}?apiKey=${DEMO_API_KEY}"
           echo "url=$url" >> "$GITHUB_OUTPUT"
           printf '%s\n' "$url" > leaderboard-url.txt
           python3 - "$url" <<'PY'
