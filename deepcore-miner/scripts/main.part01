@@ -22,7 +22,7 @@ func button(text:String,accent:Color,size:=24) -> Button:
  var b:=Button.new(); b.text=text; b.add_theme_font_size_override("font_size",size); b.add_theme_color_override("font_color",TEXT); b.add_theme_stylebox_override("normal",style(accent.darkened(0.62),accent.darkened(0.15),22)); b.add_theme_stylebox_override("pressed",style(accent.darkened(0.74),accent,22)); return b
 
 func _ui() -> void:
- var canvas:=CanvasLayer.new(); add_child(canvas)
+ var canvas:=CanvasLayer.new(); canvas.name="CanvasLayer"; add_child(canvas)
  var root:=Control.new(); root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); canvas.add_child(root)
  var top:=PanelContainer.new(); top.position=Vector2(34,55); top.size=Vector2(1012,185); top.add_theme_stylebox_override("panel",style(PANEL,Color(0.18,0.28,0.45,0.6),28)); root.add_child(top)
  var tv:=VBoxContainer.new(); tv.add_theme_constant_override("separation",8); top.add_child(tv)
