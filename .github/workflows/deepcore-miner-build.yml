@@ -7,6 +7,12 @@ on:
     paths:
       - 'deepcore-miner/**'
       - '.github/workflows/deepcore-miner-build.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'deepcore-miner/**'
+      - '.github/workflows/deepcore-miner-build.yml'
   workflow_dispatch:
 
 permissions:
